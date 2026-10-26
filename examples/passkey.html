@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roadster API Passkey smoke test</title>
+<style>
+  body { font: 16px system-ui; max-width: 42rem; margin: 3rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .7rem 1rem; margin: .3rem .3rem .3rem 0; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eee; padding: 1rem; }
+</style>
+<h1>Roadster API Passkey smoke test</h1>
+<p>Run this page at <code>http://localhost:5173</code> with the API at <code>http://localhost:3000</code>.</p>
+<button id="register">Create account and Passkey</button>
+<button id="login">Sign in with Passkey</button>
+<button id="progress">Read progress</button>
+<pre id="result" role="status"></pre>
+<script type="module">
+const base = 'http://localhost:3000';
+const result = document.querySelector('#result');
+let token = '';
+let deviceId = localStorage.getItem('roadster-device-id');
+if (!deviceId) {
+  deviceId = crypto.randomUUID();
+  localStorage.setItem('roadster-device-id', deviceId);
+}
+async function request(path, body, bearer = '') {
+  const response = await fetch(base + path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+async function run(action) {
+  try {
+    result.textContent = 'Waiting for Passkey…';
+    await action();
+  } catch (error) {
+    result.textContent = String(error);
+  }
+}
+document.querySelector('#register').onclick = () => run(async () => {
+  const start = await request('/v1/auth/register/options', { deviceId });
+  const publicKey = PublicKeyCredential.parseCreationOptionsFromJSON(start.options.publicKey);
+  const credential = await navigator.credentials.create({ publicKey });
+  const done = await request('/v1/auth/register/verify', { ceremonyId: start.ceremonyId, credential: credential.toJSON() });
+  token = done.token;
+  result.textContent = `Registered player ${done.playerId}. Token kept in this page's memory.`;
+});
+document.querySelector('#login').onclick = () => run(async () => {
+  const start = await request('/v1/auth/login/options', { deviceId });
+  const publicKey = PublicKeyCredential.parseRequestOptionsFromJSON(start.options.publicKey);
+  const credential = await navigator.credentials.get({ publicKey });
+  const done = await request('/v1/auth/login/verify', { ceremonyId: start.ceremonyId, credential: credential.toJSON() });
+  token = done.token;
+  result.textContent = `Signed in as player ${done.playerId}. Token kept in this page's memory.`;
+});
+document.querySelector('#progress').onclick = () => run(async () => {
+  if (!token) throw new Error('Register or sign in first.');
+  result.textContent = JSON.stringify(await request('/v1/me/progress', undefined, token), null, 2);
+});
+</script>
+</html>
