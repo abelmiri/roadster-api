@@ -39,6 +39,22 @@ DATABASE_URL="$DATABASE_URL" go run ./cmd/create-code \
 
 خروجی را به‌صورت امن به بازیکنان موردنظر بدهید. API مصرف: `POST /v1/me/redeem` با Bearer و `{"code":"RDST-..."}`. برای حساب تازه ابتدا یک ذخیرهٔ نسخهٔ ۱ با `PUT /v1/me/progress` ارسال شود. سرور اعتبار کد را در تراکنش به سکه اضافه می‌کند؛ بازنگری پیشرفت نیز تغییر می‌کند.
 
+اگر می‌خواهید یک کد دلخواه را از **Neon → SQL Editor** بسازید، مقدار کد را در ستون `id` وارد نکنید: `id` شناسهٔ UUID داخلی است و متن کد فقط به‌صورت هش SHA-256 در `code_hash` نگهداری می‌شود. نمونهٔ زیر کدی خصوصی با ۵۰۰ سکه، سقف ۱۰۰ بازیکن و اعتبار ۳۰ روز می‌سازد؛ پیش از اجرا متن کد و این سه مقدار را به مقدار دلخواه خود تغییر دهید. کد فعال را در مخزن Git منتشر نکنید:
+
+```sql
+INSERT INTO promo_codes (id, code_hash, coins, max_redemptions, expires_at)
+VALUES (
+  gen_random_uuid(),
+  sha256(convert_to(upper(trim('YOUR-PRIVATE-CODE')), 'UTF8')),
+  500,
+  100,
+  now() + interval '30 days'
+)
+RETURNING id, coins, max_redemptions, expires_at;
+```
+
+برای ثبت، بازیکن متن همان کد خصوصی را در بازی وارد می‌کند؛ حروف کوچک و بزرگ یکسان محسوب می‌شوند. ستون `redeemed_count` را وارد نکنید تا با مقدار پیش‌فرض صفر ساخته شود. اگر اجرای دوبارهٔ دستور با خطای یکتایی `code_hash` مواجه شد، آن کد قبلاً ساخته شده است. این SQL را روی پایگاه دادهٔ متصل به پروژهٔ Production اجرا کنید، نه در ویرایشگر متغیرهای محیطی Vercel. تابع [`sha256(bytea)` داخلی PostgreSQL](https://www.postgresql.org/docs/current/functions-binarystring.html) هش موردنیاز را تولید می‌کند.
+
 ### بات تلگرام
 
 بات را با [@BotFather](https://t.me/BotFather) بسازید و نام کاربری و توکن آن را دریافت کنید. در محیط Production، `TELEGRAM_BOT_TOKEN`، `TELEGRAM_BOT_USERNAME` (بدون `@`) و `TELEGRAM_WEBHOOK_SECRET` را در Vercel تنظیم کنید. برای secret یک رشتهٔ تصادفی دست‌کم ۱۶ کاراکتری از حروف/عدد/`_`/`-` بسازید؛ نمونهٔ تولید: `openssl rand -hex 32`. این مقادیر را commit نکنید. پس از انتشار نسخه‌ای که این تنظیمات را دارد، webhook را ثبت کنید:
