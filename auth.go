@@ -128,7 +128,7 @@ func (a *app) registerOptions(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 500, "internal_error")
 		return
 	}
-	options, session, err := a.wa.BeginRegistration(passkeyUser{id: playerID},
+	options, session, err := a.webauthnFor(r).BeginRegistration(passkeyUser{id: playerID},
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 		webauthn.WithAuthenticatorSelection(protocol.AuthenticatorSelection{UserVerification: protocol.VerificationRequired, ResidentKey: protocol.ResidentKeyRequirementRequired}))
 	if err != nil {
@@ -163,7 +163,7 @@ func (a *app) registerVerify(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 400, "ceremony_expired_or_used")
 		return
 	}
-	credential, err := a.wa.FinishRegistration(passkeyUser{id: c.playerID}, c.session, credentialRequest(r, input.Credential))
+	credential, err := a.webauthnFor(r).FinishRegistration(passkeyUser{id: c.playerID}, c.session, credentialRequest(r, input.Credential))
 	if err != nil {
 		errorJSON(w, 400, "invalid_passkey_response")
 		return
@@ -217,7 +217,7 @@ func (a *app) loginOptions(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 500, "internal_error")
 		return
 	}
-	options, session, err := a.wa.BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
+	options, session, err := a.webauthnFor(r).BeginDiscoverableLogin(webauthn.WithUserVerification(protocol.VerificationRequired))
 	if err != nil {
 		errorJSON(w, 500, "passkey_unavailable")
 		return
@@ -272,7 +272,7 @@ func (a *app) loginVerify(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 400, "ceremony_expired_or_used")
 		return
 	}
-	user, credential, err := a.wa.FinishPasskeyLogin(func(rawID, userHandle []byte) (webauthn.User, error) {
+	user, credential, err := a.webauthnFor(r).FinishPasskeyLogin(func(rawID, userHandle []byte) (webauthn.User, error) {
 		return a.loadPasskeyUser(r.Context(), rawID, userHandle)
 	}, c.session, credentialRequest(r, input.Credential))
 	if err != nil {

@@ -5,8 +5,8 @@
 ## تنظیمات مرورگر و ورود
 
 - تمام درخواست‌های JSON با `Content-Type: application/json` فرستاده می‌شوند. برای مسیرهای خصوصی، `Authorization: Bearer <token>` لازم است.
-- CORS فقط origin دقیق `GAME_ORIGIN` را می‌پذیرد. مقدار Production بازی فعلی `https://roadster-game-ten.vercel.app` است؛ `RP_ID` باید `roadster-game-ten.vercel.app` باشد. دامنهٔ سفارشی به تنظیم دوبارهٔ هر دو نیاز دارد.
-- Passkey باید از صفحه‌ای در origin بازی ساخته/استفاده شود. `localhost` برای توسعه پشتیبانی می‌شود؛ Passkey ساخته‌شده روی localhost به دامنهٔ Production منتقل نمی‌شود.
+- CORS دامنهٔ دقیق `GAME_ORIGIN` و برای توسعه `http://localhost:5173` را می‌پذیرد. مقدار Production بازی فعلی `https://roadster-game-ten.vercel.app` است؛ `RP_ID` باید `roadster-game-ten.vercel.app` باشد. دامنهٔ سفارشی به تنظیم دوبارهٔ هر دو نیاز دارد.
+- Passkey باید از صفحه‌ای در origin بازی ساخته/استفاده شود. API منتشرشده برای `http://localhost:5173` از RP ID جداگانهٔ `localhost` استفاده می‌کند. Passkey و حسابی که آنجا می‌سازید با Passkey دامنهٔ Production قابل ورود نیست؛ برای بررسی حساب واقعی، فرانت را روی دامنهٔ Production آزمایش کنید.
 - `deviceId` یک UUID تصادفی نصب مرورگر است، نه شناسهٔ سخت‌افزار. آن را یک بار با `crypto.randomUUID()` تولید و در `localStorage` نگه دارید. اگر ذخیرهٔ مرورگر پاک شد، UUID جدید بسازید و با Passkey وارد همان حساب شوید.
 - توکن نشست ۳۰ روز اعتبار دارد. آن را مانند رمز عبور محافظت کنید؛ از قرار دادن در URL، log یا پیام خطا خودداری کنید. `POST /v1/auth/logout` آن را باطل می‌کند.
 

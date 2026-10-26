@@ -68,6 +68,41 @@ func TestUUID(t *testing.T) {
 	}
 }
 
+func TestProductionAndLocalDevelopmentOrigins(t *testing.T) {
+	const production = "https://roadster-game-ten.vercel.app"
+	const local = "http://localhost:5173"
+	productionWA, err := webauthn.New(&webauthn.Config{RPDisplayName: "Roadster", RPID: "roadster-game-ten.vercel.app", RPOrigins: []string{production}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	localWA, err := webauthn.New(&webauthn.Config{RPDisplayName: "Roadster (local development)", RPID: "localhost", RPOrigins: []string{local}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &app{wa: productionWA, origin: production, devWA: localWA, devOrigin: local}
+	handler := a.cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	for _, tc := range []struct {
+		origin string
+		status int
+		wa     *webauthn.WebAuthn
+	}{
+		{production, 200, productionWA},
+		{local, 200, localWA},
+		{"https://other.example", 403, productionWA},
+	} {
+		r := httptest.NewRequest(http.MethodGet, "/health", nil)
+		r.Header.Set("Origin", tc.origin)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != tc.status || a.webauthnFor(r) != tc.wa {
+			t.Errorf("origin %q: status=%d, unexpected WebAuthn RP", tc.origin, w.Code)
+		}
+		if tc.status == 200 && w.Header().Get("Access-Control-Allow-Origin") != tc.origin {
+			t.Errorf("origin %q: missing CORS header", tc.origin)
+		}
+	}
+}
+
 func testApp(t *testing.T) (*app, func()) {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")

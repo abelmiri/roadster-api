@@ -20,6 +20,8 @@ type app struct {
 	db               *pgxpool.Pool
 	wa               *webauthn.WebAuthn
 	origin           string
+	devWA            *webauthn.WebAuthn
+	devOrigin        string
 	telegramToken    string
 	telegramSecret   string
 	telegramUsername string
@@ -64,7 +66,22 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Local Vite development uses its own WebAuthn RP. Credentials created on
+	// localhost cannot be used on the production game domain (or vice versa).
+	const devOrigin = "http://localhost:5173"
+	var devWA *webauthn.WebAuthn
+	if origin != devOrigin {
+		devWA, err = webauthn.New(&webauthn.Config{
+			RPDisplayName: "Roadster (local development)",
+			RPID:          "localhost",
+			RPOrigins:     []string{devOrigin},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	a := &app{db: db, wa: wa, origin: origin,
+		devWA: devWA, devOrigin: devOrigin,
 		telegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
 		telegramSecret:   os.Getenv("TELEGRAM_WEBHOOK_SECRET"),
 		telegramUsername: os.Getenv("TELEGRAM_BOT_USERNAME"),
@@ -108,25 +125,34 @@ func (a *app) routes() http.Handler {
 func (a *app) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Vary", "Origin")
-		if r.Header.Get("Origin") == a.origin {
-			w.Header().Set("Access-Control-Allow-Origin", a.origin)
+		requestOrigin := r.Header.Get("Origin")
+		allowed := requestOrigin == a.origin || (a.devWA != nil && requestOrigin == a.devOrigin)
+		if allowed {
+			w.Header().Set("Access-Control-Allow-Origin", requestOrigin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		}
 		if r.Method == http.MethodOptions {
-			if r.Header.Get("Origin") != a.origin {
+			if !allowed {
 				errorJSON(w, http.StatusForbidden, "origin_not_allowed")
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		if origin := r.Header.Get("Origin"); origin != "" && origin != a.origin {
+		if requestOrigin != "" && !allowed {
 			errorJSON(w, http.StatusForbidden, "origin_not_allowed")
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (a *app) webauthnFor(r *http.Request) *webauthn.WebAuthn {
+	if a.devWA != nil && r.Header.Get("Origin") == a.devOrigin {
+		return a.devWA
+	}
+	return a.wa
 }
 
 func (a *app) health(w http.ResponseWriter, r *http.Request) {
