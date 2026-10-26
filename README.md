@@ -2,6 +2,8 @@
 
 یک API مستقل با Go برای ذخیره و همگام‌سازی پیشرفت [Roadster](https://github.com/abelmiri/roadster-game). بازی فعلی همچنان محاسبهٔ سکه، XP و خرید را انجام می‌دهد؛ این سرویس دادهٔ بازیکن را با Passkey به یک حساب متصل می‌کند. برای جدول رتبه‌بندی رقابتی یا اقتصاد مقاوم در برابر تقلب، محاسبهٔ پاداش و خرید باید در آینده به سرور منتقل شود.
 
+**راهنمای کامل اتصال فرانت‌اند:** [docs/frontend-integration.md](docs/frontend-integration.md)؛ شامل نمونهٔ TypeScript، همهٔ مسیرها، جریان Passkey، انتقال ذخیرهٔ محلی، کد سکه، تلگرام و خطاها. نشانی API منتشرشده: <https://roadster-api.vercel.app/>.
+
 ## پیش‌نیاز و اجرای محلی
 
 - Go 1.27.3 یا نسخهٔ مشخص‌شده در `go.mod`. نصب رسمی: <https://go.dev/dl/>. روی این پروژه نسخهٔ 1.27.3 آزمایش شده است.
@@ -20,10 +22,34 @@ export DATABASE_URL="postgres://$(whoami)@localhost:5432/roadster?sslmode=disabl
 ```sh
 go mod download
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/001_init.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_promos_telegram.sql
 GAME_ORIGIN='http://localhost:5173' RP_ID='localhost' go run .
 ```
 
 متغیرهای لازم در [.env.example](.env.example) فهرست شده‌اند. فایل `.env` به‌صورت خودکار خوانده نمی‌شود؛ متغیرها را در shell یا تنظیمات Vercel قرار دهید. migration را **یک بار** روی هر پایگاه داده اجرا کنید؛ سرور در زمان درخواست جدول نمی‌سازد.
+
+### کد سکه
+
+مدیر کدها را فقط از CLI و با دسترسی به `DATABASE_URL` می‌سازد؛ هیچ مسیر عمومی برای ساخت کد وجود ندارد. هر کد مقدار سکه، سقف کل مصرف و تاریخ انقضا دارد؛ هر حساب یک بار می‌تواند آن را ثبت کند. کد خام فقط هنگام ساخت چاپ می‌شود و پایگاه داده هش آن را نگه می‌دارد.
+
+```sh
+DATABASE_URL="$DATABASE_URL" go run ./cmd/create-code \
+  -coins 500 -max-redemptions 100 -expires 2027-01-01T00:00:00Z
+```
+
+خروجی را به‌صورت امن به بازیکنان موردنظر بدهید. API مصرف: `POST /v1/me/redeem` با Bearer و `{"code":"RDST-..."}`. برای حساب تازه ابتدا یک ذخیرهٔ نسخهٔ ۱ با `PUT /v1/me/progress` ارسال شود. سرور اعتبار کد را در تراکنش به سکه اضافه می‌کند؛ بازنگری پیشرفت نیز تغییر می‌کند.
+
+### بات تلگرام
+
+بات را با [@BotFather](https://t.me/BotFather) بسازید و نام کاربری و توکن آن را دریافت کنید. در محیط Production، `TELEGRAM_BOT_TOKEN`، `TELEGRAM_BOT_USERNAME` (بدون `@`) و `TELEGRAM_WEBHOOK_SECRET` را در Vercel تنظیم کنید. برای secret یک رشتهٔ تصادفی دست‌کم ۱۶ کاراکتری از حروف/عدد/`_`/`-` بسازید؛ نمونهٔ تولید: `openssl rand -hex 32`. این مقادیر را commit نکنید. پس از انتشار نسخه‌ای که این تنظیمات را دارد، webhook را ثبت کنید:
+
+```sh
+export TELEGRAM_BOT_TOKEN='...'
+export TELEGRAM_WEBHOOK_SECRET='...'
+go run ./cmd/set-webhook -api https://roadster-api.vercel.app
+```
+
+این دستور طبق [Bot API رسمی Telegram](https://core.telegram.org/bots/api#setwebhook) یک webhook HTTPS با هدر secret ثبت می‌کند. بات فقط پیام خصوصی را پردازش می‌کند. بازیکن در بازی `POST /v1/me/telegram/link` را می‌زند، لینک ۱۰ دقیقه‌ای `t.me` را باز می‌کند و Start را می‌زند. دستورهای `/balance`، `/record` و `/redeem CODE` فعال‌اند. `GET /v1/me/telegram` وضعیت اتصال و `DELETE /v1/me/telegram` قطع اتصال را فراهم می‌کند. لینک جدید، لینک قبلی را باطل می‌کند. پیام‌های تکراری Telegram اثر مالی تکراری ندارند.
 
 برای آزمایش دستی Passkey، در ترمینال دیگر اجرا کنید:
 
@@ -95,9 +121,10 @@ python3 -m http.server 5173 --directory examples
 
 1. این پوشه را به‌عنوان یک مخزن Git مستقل در GitHub قرار دهید؛ فایل‌های `.env` و `.vercel` را commit نکنید.
 2. در داشبورد Vercel از **Add New → Project** مخزن API را انتخاب کنید. Root Directory ریشهٔ همین مخزن و Framework Preset برابر **Go** باشد. `vercel.json` همین preset را تثبیت می‌کند. طبق [مستندات Go Runtime](https://vercel.com/docs/functions/runtimes/go)، `main.go` و `go.mod` ریشه شناسایی می‌شوند و برنامه باید روی `PORT` گوش کند. Go Runtime فعلاً Beta است.
-3. از بخش Storage/Marketplace، یک PostgreSQL مانند Neon را متصل کنید. [Vercel Marketplace](https://vercel.com/docs/marketplace-storage) connection string را به متغیرهای پروژه اضافه می‌کند. مقدار pooled connection string را در `DATABASE_URL` قرار دهید و migration را با `psql` روی همان پایگاه داده اجرا کنید. پایگاه داده و Function را در منطقه‌های نزدیک انتخاب کنید.
-4. `GAME_ORIGIN` را دقیقاً برابر origin بازی، مثلاً `https://roadster-game.example.com`، و `RP_ID` را برابر نام دامنهٔ بدون `https://` تنظیم کنید. از دامنهٔ ثابت Production استفاده کنید؛ Passkey به دامنه وابسته است. برای Preview، پایگاه داده و origin جدا در نظر بگیرید.
-5. Deploy را بزنید، `GET https://<api-domain>/health` را بررسی کنید، سپس جریان ثبت‌نام و ورود را از **origin بازی** آزمایش کنید. هر push بعدی به شاخهٔ Production دوباره منتشر می‌شود؛ جزئیات در [راهنمای اتصال Git به Vercel](https://vercel.com/docs/git) آمده است.
+3. از بخش Storage/Marketplace، یک PostgreSQL مانند Neon را متصل کنید. [Vercel Marketplace](https://vercel.com/docs/marketplace-storage) connection string را به متغیرهای پروژه اضافه می‌کند. مقدار pooled connection string دارای TLS را در `DATABASE_URL` برای محیط **Production** قرار دهید. روی همان پایگاه داده، به‌ترتیب `001_init.sql` و `002_promos_telegram.sql` را با `psql` اجرا کنید. پایگاه داده و Function را در منطقه‌های نزدیک انتخاب کنید.
+4. در **Project → Settings → Environment Variables**، `GAME_ORIGIN=https://roadster-game-ten.vercel.app` و `RP_ID=roadster-game-ten.vercel.app` را برای Production بگذارید. این دامنهٔ فعلی بازی است؛ اگر بازی به دامنهٔ دیگری منتقل شد هر دو مقدار باید مطابق آن عوض شوند. Passkey به RP ID وابسته است. برای Preview، پایگاه داده و origin جدا در نظر بگیرید.
+5. بعد از افزودن/تغییر متغیرها، از **Deployments** نسخهٔ Production را دوباره Deploy کنید یا یک commit جدید push کنید؛ تغییر env روی Function از پیش منتشرشده اعمال نمی‌شود. سپس `curl -i https://roadster-api.vercel.app/health` باید `200` و `{"status":"ok"}` بدهد. اگر `FUNCTION_INVOCATION_FAILED` می‌بینید، **Project → Logs** را بخوانید؛ نبود سه متغیر اصلی باعث خروج سرور هنگام شروع می‌شود.
+6. جریان ثبت‌نام و ورود را از **origin بازی** آزمایش کنید. اگر بات خواستید، سه متغیر آن را تنظیم و بعد از انتشار دوباره، webhook را با دستور بالا ثبت کنید. هر push بعدی به شاخهٔ Production دوباره منتشر می‌شود؛ جزئیات در [راهنمای اتصال Git به Vercel](https://vercel.com/docs/git) آمده است.
 
 ## آزمون
 

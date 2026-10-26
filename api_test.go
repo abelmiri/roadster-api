@@ -99,6 +99,13 @@ func testApp(t *testing.T) (*app, func()) {
 	if _, err := db.Exec(ctx, string(migration)); err != nil {
 		t.Fatal(err)
 	}
+	migration, err = os.ReadFile("migrations/002_promos_telegram.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, string(migration)); err != nil {
+		t.Fatal(err)
+	}
 	wa, err := webauthn.New(&webauthn.Config{RPDisplayName: "Roadster", RPID: "localhost", RPOrigins: []string{"http://localhost:5173"}})
 	if err != nil {
 		t.Fatal(err)

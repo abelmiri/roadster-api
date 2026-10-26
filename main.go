@@ -17,9 +17,14 @@ import (
 )
 
 type app struct {
-	db     *pgxpool.Pool
-	wa     *webauthn.WebAuthn
-	origin string
+	db               *pgxpool.Pool
+	wa               *webauthn.WebAuthn
+	origin           string
+	telegramToken    string
+	telegramSecret   string
+	telegramUsername string
+	telegramClient   *http.Client
+	telegramAPIURL   string
 }
 
 func main() {
@@ -55,7 +60,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	a := &app{db: db, wa: wa, origin: origin}
+	a := &app{db: db, wa: wa, origin: origin,
+		telegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
+		telegramSecret:   os.Getenv("TELEGRAM_WEBHOOK_SECRET"),
+		telegramUsername: os.Getenv("TELEGRAM_BOT_USERNAME"),
+		telegramClient:   &http.Client{Timeout: 5 * time.Second},
+		telegramAPIURL:   "https://api.telegram.org"}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
@@ -83,6 +93,11 @@ func (a *app) routes() http.Handler {
 	mux.Handle("GET /v1/me/progress", a.authorize(http.HandlerFunc(a.getProgress)))
 	mux.Handle("PUT /v1/me/progress", a.authorize(http.HandlerFunc(a.putProgress)))
 	mux.Handle("POST /v1/runs", a.authorize(http.HandlerFunc(a.createRun)))
+	mux.Handle("POST /v1/me/redeem", a.authorize(http.HandlerFunc(a.redeemCode)))
+	mux.Handle("GET /v1/me/telegram", a.authorize(http.HandlerFunc(a.getTelegram)))
+	mux.Handle("POST /v1/me/telegram/link", a.authorize(http.HandlerFunc(a.createTelegramLink)))
+	mux.Handle("DELETE /v1/me/telegram", a.authorize(http.HandlerFunc(a.unlinkTelegram)))
+	mux.HandleFunc("POST /v1/telegram/webhook", a.telegramWebhook)
 	return a.cors(mux)
 }
 
@@ -91,7 +106,7 @@ func (a *app) cors(next http.Handler) http.Handler {
 		w.Header().Set("Vary", "Origin")
 		if r.Header.Get("Origin") == a.origin {
 			w.Header().Set("Access-Control-Allow-Origin", a.origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		}
 		if r.Method == http.MethodOptions {
