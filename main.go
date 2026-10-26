@@ -29,6 +29,10 @@ type app struct {
 
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		// Neon Marketplace prefixes its variables when a custom integration prefix is set.
+		databaseURL = os.Getenv("DATABASE_URL_DATABASE_URL")
+	}
 	origin := strings.TrimRight(os.Getenv("GAME_ORIGIN"), "/")
 	rpID := os.Getenv("RP_ID")
 	if databaseURL == "" || origin == "" || rpID == "" {
