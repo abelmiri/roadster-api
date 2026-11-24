@@ -18,6 +18,7 @@ import (
 
 type app struct {
 	db               *pgxpool.Pool
+	hub              *gameHub
 	wa               *webauthn.WebAuthn
 	origin           string
 	devWA            *webauthn.WebAuthn
@@ -58,9 +59,6 @@ func main() {
 	if err := db.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
-	if err := ensureLanSchema(ctx, db); err != nil {
-		log.Fatal("LAN schema migration: ", err)
-	}
 	wa, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: "Roadster",
 		RPID:          rpID,
@@ -83,7 +81,7 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	a := &app{db: db, wa: wa, origin: origin,
+	a := &app{db: db, hub: newGameHub(), wa: wa, origin: origin,
 		devWA: devWA, devOrigin: devOrigin,
 		telegramToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
 		telegramSecret:   os.Getenv("TELEGRAM_WEBHOOK_SECRET"),
@@ -98,8 +96,6 @@ func main() {
 		Addr:              ":" + port,
 		Handler:           a.routes(),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      20 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 	log.Printf("Roadster API listening on :%s", port)
@@ -122,13 +118,10 @@ func (a *app) routes() http.Handler {
 	mux.Handle("POST /v1/me/telegram/link", a.authorize(http.HandlerFunc(a.createTelegramLink)))
 	mux.Handle("DELETE /v1/me/telegram", a.authorize(http.HandlerFunc(a.unlinkTelegram)))
 	mux.HandleFunc("POST /v1/telegram/webhook", a.telegramWebhook)
-	mux.HandleFunc("POST /v1/lan/session", a.createLanSession)
-	mux.HandleFunc("GET /v1/lan/state", a.lanState)
-	mux.HandleFunc("POST /v1/lan/invite", a.createLanInvite)
-	mux.HandleFunc("POST /v1/lan/respond", a.respondLanInvite)
-	mux.HandleFunc("POST /v1/lan/cancel", a.cancelLanInvite)
-	mux.HandleFunc("POST /v1/lan/signal", a.writeLanSignal)
-	mux.HandleFunc("DELETE /v1/lan/session", a.closeLanSession)
+	if a.hub == nil {
+		a.hub = newGameHub()
+	}
+	mux.HandleFunc("GET /v1/game/socket", a.gameSocket)
 	return a.cors(mux)
 }
 

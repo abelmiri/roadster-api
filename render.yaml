@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: roadster-api
+    runtime: go
+    plan: free
+    numInstances: 1
+    buildCommand: go build -o roadster-api .
+    startCommand: ./roadster-api
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GAME_ORIGIN
+        value: https://roadster-game-ten.vercel.app
+      - key: RP_ID
+        value: roadster-game-ten.vercel.app

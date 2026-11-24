@@ -1,6 +1,6 @@
 # راهنمای اتصال بازی Roadster به API
 
-نشانی Production: `https://roadster-api.vercel.app`. پیش از اتصال واقعی، پاسخ `GET /health` باید `200` و `{"status":"ok"}` باشد. این فایل قرارداد نسخهٔ `v1` را توضیح می‌دهد؛ مسیرهای بازی در این مخزن تغییر نکرده‌اند.
+نشانی Production را از سرویس Render بگیرید و در `VITE_ROADSTER_API_URL` فرانت‌اند تنظیم کنید. پیش از اتصال واقعی، پاسخ `GET /health` باید `200` و `{"status":"ok"}` باشد. این فایل قرارداد نسخهٔ `v1` را توضیح می‌دهد؛ مسیرهای بازی در این مخزن تغییر نکرده‌اند.
 
 ## تنظیمات مرورگر و ورود
 
@@ -23,7 +23,7 @@
 چالش ورود/ثبت‌نام ۵ دقیقه‌ای و یک‌بارمصرف است. اگر کاربر پنجرهٔ Passkey را لغو کند یا چالش منقضی شود، مرحلهٔ options را دوباره اجرا کنید. ثبت‌نام نیازی به نام بازیکن ندارد. Passkey همگام‌شونده می‌تواند دستگاه دوم را به همان حساب وارد کند؛ بازیابی مستقل بدون Passkey در نسخهٔ اول وجود ندارد.
 
 ```ts
-const API = 'https://roadster-api.vercel.app';
+const API = import.meta.env.VITE_ROADSTER_API_URL;
 const deviceKey = 'roadster-device-id';
 let deviceId = localStorage.getItem(deviceKey);
 if (!deviceId) {

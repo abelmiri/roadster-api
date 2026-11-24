@@ -2,13 +2,12 @@
 
 یک API مستقل با Go برای ذخیره و همگام‌سازی پیشرفت [Roadster](https://github.com/abelmiri/roadster-game). بازی فعلی همچنان محاسبهٔ سکه، XP و خرید را انجام می‌دهد؛ این سرویس دادهٔ بازیکن را با Passkey به یک حساب متصل می‌کند. برای جدول رتبه‌بندی رقابتی یا اقتصاد مقاوم در برابر تقلب، محاسبهٔ پاداش و خرید باید در آینده به سرور منتقل شود.
 
-**راهنمای کامل اتصال فرانت‌اند:** [docs/frontend-integration.md](docs/frontend-integration.md)؛ شامل نمونهٔ TypeScript، همهٔ مسیرها، جریان Passkey، انتقال ذخیرهٔ محلی، کد سکه، تلگرام و خطاها. نشانی API منتشرشده: <https://roadster-api.vercel.app/>.
+**راهنمای کامل اتصال فرانت‌اند:** [docs/frontend-integration.md](docs/frontend-integration.md)؛ شامل نمونهٔ TypeScript، مسیرهای حساب، جریان Passkey، انتقال ذخیرهٔ محلی، کد سکه، تلگرام و خطاها. آدرس سرویس منتشرشده را در `VITE_ROADSTER_API_URL` فرانت‌اند تنظیم کنید.
 
 ## پیش‌نیاز و اجرای محلی
 
 - Go 1.27.3 یا نسخهٔ مشخص‌شده در `go.mod`. نصب رسمی: <https://go.dev/dl/>. روی این پروژه نسخهٔ 1.27.3 آزمایش شده است.
-- PostgreSQL و ابزار `psql`. برای Vercel، یک PostgreSQL از Marketplace مانند Neon مناسب است. از connection string دارای pooling و TLS استفاده کنید.
-- جدول‌های موقت مسابقهٔ دونفره از `migrations/003_lan.sql` هنگام شروع API به‌صورت خودکار ساخته می‌شوند.
+- PostgreSQL و ابزار `psql`. برای Render می‌توان از پایگاه دادهٔ PostgreSQL موجود مانند Neon با connection string دارای pooling و TLS استفاده کرد.
 - مرورگر با پشتیبانی Passkey و یک origin ثابت برای بازی. برای آزمایش محلی `http://localhost:5173` و `RP_ID=localhost` به‌کار می‌رود؛ در Production باید origin واقعی بازی و نام دامنهٔ آن تنظیم شود.
 
 در macOS با Homebrew، PostgreSQL 18 نصب شده است. اگر می‌خواهید پایگاه دادهٔ محلی دائمی بسازید، این دستورها را یک بار اجرا کنید:
@@ -27,7 +26,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_promos_telegram.sql
 GAME_ORIGIN='http://localhost:5173' RP_ID='localhost' go run .
 ```
 
-متغیرهای لازم در [.env.example](.env.example) فهرست شده‌اند. فایل `.env` به‌صورت خودکار خوانده نمی‌شود؛ متغیرها را در shell یا تنظیمات Vercel قرار دهید. migration را **یک بار** روی هر پایگاه داده اجرا کنید؛ سرور در زمان درخواست جدول نمی‌سازد.
+متغیرهای لازم در [.env.example](.env.example) فهرست شده‌اند. فایل `.env` به‌صورت خودکار خوانده نمی‌شود؛ متغیرها را در shell یا تنظیمات Render قرار دهید. migration را **یک بار** روی هر پایگاه داده اجرا کنید؛ سرور در زمان درخواست جدول نمی‌سازد.
 
 ### کد سکه
 
@@ -54,16 +53,16 @@ VALUES (
 RETURNING id, coins, max_redemptions, expires_at;
 ```
 
-برای ثبت، بازیکن متن همان کد خصوصی را در بازی وارد می‌کند؛ حروف کوچک و بزرگ یکسان محسوب می‌شوند. ستون `redeemed_count` را وارد نکنید تا با مقدار پیش‌فرض صفر ساخته شود. اگر اجرای دوبارهٔ دستور با خطای یکتایی `code_hash` مواجه شد، آن کد قبلاً ساخته شده است. این SQL را روی پایگاه دادهٔ متصل به پروژهٔ Production اجرا کنید، نه در ویرایشگر متغیرهای محیطی Vercel. تابع [`sha256(bytea)` داخلی PostgreSQL](https://www.postgresql.org/docs/current/functions-binarystring.html) هش موردنیاز را تولید می‌کند.
+برای ثبت، بازیکن متن همان کد خصوصی را در بازی وارد می‌کند؛ حروف کوچک و بزرگ یکسان محسوب می‌شوند. ستون `redeemed_count` را وارد نکنید تا با مقدار پیش‌فرض صفر ساخته شود. اگر اجرای دوبارهٔ دستور با خطای یکتایی `code_hash` مواجه شد، آن کد قبلاً ساخته شده است. این SQL را روی پایگاه دادهٔ متصل به پروژهٔ Production اجرا کنید، نه در ویرایشگر متغیرهای محیطی Render. تابع [`sha256(bytea)` داخلی PostgreSQL](https://www.postgresql.org/docs/current/functions-binarystring.html) هش موردنیاز را تولید می‌کند.
 
 ### بات تلگرام
 
-بات را با [@BotFather](https://t.me/BotFather) بسازید و نام کاربری و توکن آن را دریافت کنید. در محیط Production، `TELEGRAM_BOT_TOKEN`، `TELEGRAM_BOT_USERNAME` (بدون `@`) و `TELEGRAM_WEBHOOK_SECRET` را در Vercel تنظیم کنید. برای secret یک رشتهٔ تصادفی دست‌کم ۱۶ کاراکتری از حروف/عدد/`_`/`-` بسازید؛ نمونهٔ تولید: `openssl rand -hex 32`. این مقادیر را commit نکنید. پس از انتشار نسخه‌ای که این تنظیمات را دارد، webhook را ثبت کنید:
+بات را با [@BotFather](https://t.me/BotFather) بسازید و نام کاربری و توکن آن را دریافت کنید. در محیط Production، `TELEGRAM_BOT_TOKEN`، `TELEGRAM_BOT_USERNAME` (بدون `@`) و `TELEGRAM_WEBHOOK_SECRET` را در Render تنظیم کنید. برای secret یک رشتهٔ تصادفی دست‌کم ۱۶ کاراکتری از حروف/عدد/`_`/`-` بسازید؛ نمونهٔ تولید: `openssl rand -hex 32`. این مقادیر را commit نکنید. پس از انتشار نسخه‌ای که این تنظیمات را دارد، webhook را ثبت کنید:
 
 ```sh
 export TELEGRAM_BOT_TOKEN='...'
 export TELEGRAM_WEBHOOK_SECRET='...'
-go run ./cmd/set-webhook -api https://roadster-api.vercel.app
+go run ./cmd/set-webhook -api https://YOUR-SERVICE.onrender.com
 ```
 
 این دستور طبق [Bot API رسمی Telegram](https://core.telegram.org/bots/api#setwebhook) یک webhook HTTPS با هدر secret ثبت می‌کند. بات فقط پیام خصوصی را پردازش می‌کند. بازیکن در بازی `POST /v1/me/telegram/link` را می‌زند، لینک ۱۰ دقیقه‌ای `t.me` را باز می‌کند و Start را می‌زند. دستورهای `/balance`، `/record` و `/redeem CODE` فعال‌اند. `GET /v1/me/telegram` وضعیت اتصال و `DELETE /v1/me/telegram` قطع اتصال را فراهم می‌کند. لینک جدید، لینک قبلی را باطل می‌کند. پیام‌های تکراری Telegram اثر مالی تکراری ندارند.
@@ -78,11 +77,9 @@ python3 -m http.server 5173 --directory examples
 
 ## قرارداد API
 
-### کشف خودکار مسابقهٔ دونفره
+### WebSocket مسابقه
 
-این مسیرها به حساب Passkey نیاز ندارند و فقط نشست موقت مرورگر را می‌پذیرند. `POST /v1/lan/session` با `{"name":"..."}` شناسه و Bearer token موقت می‌دهد. `GET /v1/lan/state` هر سه ثانیه حضور را تازه می‌کند و بازیکن‌های احتمالی با IP عمومی یکسان، دعوت‌های فعال و پیام WebRTC طرف مقابل را برمی‌گرداند. `POST /v1/lan/invite` با `peerId` دعوت می‌سازد؛ `POST /v1/lan/respond` با `inviteId` و `accept` پاسخ می‌دهد؛ `POST /v1/lan/signal` با `inviteId`، `kind`، `signalId`، `code`، `sdp` و در صورت وجود `wifiAddress` پیام WebRTC را می‌فرستد. `POST /v1/lan/cancel` دعوت را لغو و `DELETE /v1/lan/session` حضور را حذف می‌کند. این مسیرها فقط سیگنالینگ را انجام می‌دهند؛ داده‌های مسابقه از API عبور نمی‌کنند.
-
-نشست‌های غیرفعال، دعوت‌های منقضی و پیام‌های وابسته به‌صورت دوره‌ای هنگام ساخت نشست جدید حذف می‌شوند. تطبیق IPv4 عمومی یکسان یا پیشوند IPv6 مشترک `/64` فقط نامزد احتمالی تولید می‌کند و تضمین نمی‌کند دو دستگاه در یک وای‌فای باشند. اتصال بازی فقط با نامزدهای مستقیم WebRTC برقرار می‌شود.
+`GET /v1/game/socket` اتصال WebSocket را برقرار می‌کند. مرورگر پس از اتصال پیام `identify` با نام راننده می‌فرستد و پیام‌های `presence` بازیکنان آزاد، `invitation` دعوت، `room` وضعیت اتاق و `drive` وضعیت رانندگی دیگر اعضا را دریافت می‌کند. پیام‌های ورودی `invite`، `accept`، `decline`، `start`، `rematch` و `leave` گردش کار مسابقه را کنترل می‌کنند. این مسیر به حساب Passkey نیاز ندارد.
 
 همهٔ درخواست‌ها و پاسخ‌ها JSON هستند. خطاها به شکل `{"error":"code"}` برمی‌گردند. مسیرهای پیشرفت و دور بازی به `Authorization: Bearer <token>` نیاز دارند. توکن تصادفی ۳۰ روز اعتبار دارد؛ پایگاه داده فقط هش آن را نگه می‌دارد. `POST /v1/auth/logout` نشست جاری را باطل می‌کند. `GET /health` اتصال پایگاه داده را بررسی می‌کند.
 
@@ -140,14 +137,18 @@ python3 -m http.server 5173 --directory examples
 3. بعد از خرید، توقف، خروج از صفحه، ثبت نام رکورد و پایان دور، ذخیره را با `PUT /v1/me/progress` بفرستید. برای هر فریم یا هر ثانیه درخواست شبکه نفرستید؛ checkpoint دوره‌ای با فاصلهٔ بیشتر و ذخیرهٔ فوری در رویدادهای مهم مناسب‌تر است.
 4. در خطای `409`، نسخهٔ سرور را با وضعیت محلی مقایسه کنید. ادغام خودکار موجودی و خرید بدون منطق اقتصادِ سمت سرور ممکن است داده را ناسازگار کند؛ در نسخهٔ اول نسخهٔ سرور را نشان دهید و از بازیکن بخواهید یکی از نسخه‌ها را انتخاب کند.
 
-## استقرار در Vercel
+## مسابقهٔ برخط
 
-1. این پوشه را به‌عنوان یک مخزن Git مستقل در GitHub قرار دهید؛ فایل‌های `.env` و `.vercel` را commit نکنید.
-2. در داشبورد Vercel از **Add New → Project** مخزن API را انتخاب کنید. Root Directory ریشهٔ همین مخزن و Framework Preset برابر **Go** باشد. `vercel.json` همین preset را تثبیت می‌کند. طبق [مستندات Go Runtime](https://vercel.com/docs/functions/runtimes/go)، `main.go` و `go.mod` ریشه شناسایی می‌شوند و برنامه باید روی `PORT` گوش کند. Go Runtime فعلاً Beta است.
-3. از بخش Storage/Marketplace، یک PostgreSQL مانند Neon را متصل کنید. [Vercel Marketplace](https://vercel.com/docs/marketplace-storage) connection string را به متغیرهای پروژه اضافه می‌کند. سرور `DATABASE_URL` را می‌خواند؛ اگر برای اتصال Neon پیشوند `DATABASE_URL` انتخاب شده باشد، نام متغیر اتصال به `DATABASE_URL_DATABASE_URL` تبدیل می‌شود و سرور آن را هم می‌پذیرد. این مقدار باید pooled و دارای TLS باشد. روی همان پایگاه داده، به‌ترتیب `001_init.sql` و `002_promos_telegram.sql` را با `psql` یا SQL Editor نئون اجرا کنید. پایگاه داده و Function را در منطقه‌های نزدیک انتخاب کنید.
-4. در **Project → Settings → Environment Variables**، `GAME_ORIGIN=https://roadster-game-ten.vercel.app` و `RP_ID=roadster-game-ten.vercel.app` را برای Production بگذارید. این دامنهٔ فعلی بازی است؛ اگر بازی به دامنهٔ دیگری منتقل شد هر دو مقدار باید مطابق آن عوض شوند. API برای توسعهٔ فرانت روی `http://localhost:5173` نیز CORS و Passkey با RP ID مستقل `localhost` دارد؛ حساب و Passkey محلی به دامنهٔ Production منتقل نمی‌شود. برای Preview، پایگاه داده و origin جدا در نظر بگیرید.
-5. بعد از افزودن/تغییر متغیرها، از **Deployments** نسخهٔ Production را دوباره Deploy کنید یا یک commit جدید push کنید؛ تغییر env روی Function از پیش منتشرشده اعمال نمی‌شود. سپس `curl -i https://roadster-api.vercel.app/health` باید `200` و `{"status":"ok"}` بدهد. اگر `FUNCTION_INVOCATION_FAILED` می‌بینید، **Project → Logs** را بخوانید؛ نبود سه متغیر اصلی باعث خروج سرور هنگام شروع می‌شود.
-6. جریان ثبت‌نام و ورود را از **origin بازی** آزمایش کنید. اگر بات خواستید، سه متغیر آن را تنظیم و بعد از انتشار دوباره، webhook را با دستور بالا ثبت کنید. هر push بعدی به شاخهٔ Production دوباره منتشر می‌شود؛ جزئیات در [راهنمای اتصال Git به Vercel](https://vercel.com/docs/git) آمده است.
+هر مرورگر به `GET /v1/game/socket` متصل می‌شود و پس از ارسال پیام `identify` در فهرست بازیکنان آنلاین قرار می‌گیرد. میزبان می‌تواند به هر تعداد بازیکن آزاد دعوت بفرستد. دعوت ۴۵ ثانیه اعتبار دارد و مهمان با `accept` یا `decline` پاسخ می‌دهد. میزبان مسابقه را با دست‌کم دو بازیکن شروع می‌کند. سرور شروع و پایان مسابقه را تعیین می‌کند و وضعیت رانندگی را برای اعضای اتاق پخش می‌کند. هیچ سقف ثابتی برای تعداد اعضای اتاق تعریف نشده است؛ ظرفیت واقعی به منابع سرویس و پهنای باند بستگی دارد.
+
+فهرست بازیکنان و اتاق‌ها در حافظهٔ همان فرایند هستند. سرویس باید یک instance داشته باشد؛ بازنشر یا restart اتاق‌های فعال را از بین می‌برد و کلاینت‌ها دوباره متصل می‌شوند. برای چند instance یا نگهداری مسابقه در زمان restart باید state و پیام‌رسانی بین instanceها اضافه شود.
+
+## استقرار در Render
+
+1. مخزن API را به Render متصل کنید و Blueprint فایل [`render.yaml`](render.yaml) را بسازید. این تنظیم یک Go Web Service با یک instance و health check مسیر `/health` تعریف می‌کند.
+2. مقدار محرمانهٔ `DATABASE_URL` را در Render وارد کنید. می‌توان از همان PostgreSQL فعلی با connection string دارای pooling و TLS استفاده کرد. روی پایگاه داده، migrationهای `001_init.sql` و `002_promos_telegram.sql` را یک بار اجرا کنید.
+3. `GAME_ORIGIN` و `RP_ID` در Blueprint برای `https://roadster-game-ten.vercel.app` تنظیم شده‌اند. اگر دامنهٔ بازی تغییر کند، هر دو را مطابق دامنهٔ جدید تغییر دهید. برای Telegram نیز متغیرهای اختیاری بات را در Render تنظیم کنید.
+4. پس از آماده شدن سرویس، `/health` را بررسی کنید و `VITE_ROADSTER_API_URL` را روی آدرس `https://...onrender.com` در پروژهٔ فرانت Vercel بگذارید و آن را دوباره منتشر کنید. این آدرس برای Account & Sync و WebSocket مسابقه استفاده می‌شود.
 
 ## آزمون
 
