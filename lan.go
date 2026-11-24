@@ -158,7 +158,9 @@ func (a *app) lanState(w http.ResponseWriter, r *http.Request) {
 		errorJSON(w, 500, "database_error")
 		return
 	}
-	rows, err := a.db.Query(ctx, `SELECT other.id::text,other.name FROM lan_sessions self JOIN lan_sessions other ON other.public_ip=self.public_ip
+	rows, err := a.db.Query(ctx, `SELECT other.id::text,other.name FROM lan_sessions self JOIN lan_sessions other ON
+		(other.public_ip=self.public_ip OR (family(self.public_ip)=6 AND family(other.public_ip)=6 AND
+		 network(set_masklen(other.public_ip,64))=network(set_masklen(self.public_ip,64))))
 		WHERE self.id=$1 AND other.id<>$1 AND other.active_at>now()-interval '15 seconds' AND other.expires_at>now()
 		AND NOT EXISTS (SELECT 1 FROM lan_invites busy WHERE (busy.host_id=other.id OR busy.guest_id=other.id)
 			AND busy.state IN ('pending','accepted') AND busy.expires_at>now())
@@ -251,7 +253,9 @@ func (a *app) createLanInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tag, err := a.db.Exec(r.Context(), `INSERT INTO lan_invites(id,host_id,guest_id)
-		SELECT $1,self.id,other.id FROM lan_sessions self JOIN lan_sessions other ON other.id=$3 AND other.public_ip=self.public_ip
+		SELECT $1,self.id,other.id FROM lan_sessions self JOIN lan_sessions other ON other.id=$3 AND
+		(other.public_ip=self.public_ip OR (family(self.public_ip)=6 AND family(other.public_ip)=6 AND
+		 network(set_masklen(other.public_ip,64))=network(set_masklen(self.public_ip,64))))
 		WHERE self.id=$2 AND other.active_at>now()-interval '15 seconds' AND other.expires_at>now()
 		AND NOT EXISTS (SELECT 1 FROM lan_invites i WHERE (i.host_id IN ($2,$3) OR i.guest_id IN ($2,$3)) AND i.state IN ('pending','accepted') AND i.expires_at>now())`, inviteID, id, input.PeerID)
 	if err != nil {

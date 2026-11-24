@@ -83,3 +83,45 @@ func TestLanDiscoveryInviteAndSignal(t *testing.T) {
 		t.Fatalf("session allowed from changed network: %d", denied.Code)
 	}
 }
+
+func TestLanIPv6PrefixDiscovery(t *testing.T) {
+	a, cleanup := testApp(t)
+	defer cleanup()
+	h := a.routes()
+	request := func(method, path, address, token, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.RemoteAddr = "[" + address + "]:5000"
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	create := func(address string) (string, string) {
+		t.Helper()
+		w := request("POST", "/v1/lan/session", address, "", `{"name":"Driver"}`)
+		if w.Code != 201 {
+			t.Fatalf("IPv6 session: %d %s", w.Code, w.Body.String())
+		}
+		var session struct {
+			ID    string `json:"id"`
+			Token string `json:"token"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &session); err != nil {
+			t.Fatal(err)
+		}
+		return session.ID, session.Token
+	}
+	_, hostToken := create("2001:db8:abcd:1234::11")
+	guestID, _ := create("2001:db8:abcd:1234::22")
+	otherID, _ := create("2001:db8:abcd:9999::33")
+	state := request("GET", "/v1/lan/state", "2001:db8:abcd:1234::11", hostToken, "")
+	if state.Code != 200 || !strings.Contains(state.Body.String(), guestID) || strings.Contains(state.Body.String(), otherID) {
+		t.Fatalf("IPv6 subnet discovery mismatch: %d %s", state.Code, state.Body.String())
+	}
+}
