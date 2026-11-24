@@ -58,6 +58,9 @@ func main() {
 	if err := db.Ping(ctx); err != nil {
 		log.Fatal(err)
 	}
+	if err := ensureLanSchema(ctx, db); err != nil {
+		log.Fatal("LAN schema migration: ", err)
+	}
 	wa, err := webauthn.New(&webauthn.Config{
 		RPDisplayName: "Roadster",
 		RPID:          rpID,
@@ -119,6 +122,13 @@ func (a *app) routes() http.Handler {
 	mux.Handle("POST /v1/me/telegram/link", a.authorize(http.HandlerFunc(a.createTelegramLink)))
 	mux.Handle("DELETE /v1/me/telegram", a.authorize(http.HandlerFunc(a.unlinkTelegram)))
 	mux.HandleFunc("POST /v1/telegram/webhook", a.telegramWebhook)
+	mux.HandleFunc("POST /v1/lan/session", a.createLanSession)
+	mux.HandleFunc("GET /v1/lan/state", a.lanState)
+	mux.HandleFunc("POST /v1/lan/invite", a.createLanInvite)
+	mux.HandleFunc("POST /v1/lan/respond", a.respondLanInvite)
+	mux.HandleFunc("POST /v1/lan/cancel", a.cancelLanInvite)
+	mux.HandleFunc("POST /v1/lan/signal", a.writeLanSignal)
+	mux.HandleFunc("DELETE /v1/lan/session", a.closeLanSession)
 	return a.cors(mux)
 }
 
