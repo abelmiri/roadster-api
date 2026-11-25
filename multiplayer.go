@@ -12,7 +12,6 @@ import (
 )
 
 const raceTarget = 1000.0
-const raceLength = 3 * time.Minute
 const raceCountdown = 3 * time.Second
 
 var racePaints = [...]string{"blue", "orange", "pink", "lime"}
@@ -29,15 +28,16 @@ type gameDrive struct {
 	Crashed  bool        `json:"crashed"`
 }
 type gameInput struct {
-	Type     string     `json:"type"`
-	Name     string     `json:"name"`
-	Target   int        `json:"target"`
-	Room     string     `json:"room"`
-	Round    int        `json:"round"`
-	Car      *gamePose  `json:"car"`
-	Wheels   []gamePose `json:"wheels"`
-	Distance float64    `json:"distance"`
-	Crashed  bool       `json:"crashed"`
+	Type         string     `json:"type"`
+	Name         string     `json:"name"`
+	Target       int        `json:"target"`
+	DistanceGoal int        `json:"distanceGoal"`
+	Room         string     `json:"room"`
+	Round        int        `json:"round"`
+	Car          *gamePose  `json:"car"`
+	Wheels       []gamePose `json:"wheels"`
+	Distance     float64    `json:"distance"`
+	Crashed      bool       `json:"crashed"`
 }
 type gamePlayer struct {
 	ID        int        `json:"id"`
@@ -48,6 +48,7 @@ type gamePlayer struct {
 	lastDrive time.Time
 }
 type gameRoom struct {
+	target   float64
 	code     string
 	host     int
 	phase    string
@@ -193,8 +194,12 @@ func (h *gameHub) sendBytes(c *gameClient, data []byte) {
 func (h *gameHub) presence() {
 	available := make([]map[string]any, 0)
 	for _, c := range h.clients {
-		if c.name != "" && c.room == nil {
-			available = append(available, map[string]any{"id": c.id, "name": c.name})
+		if c.name != "" {
+			room, phase := "", "idle"
+			if c.room != nil {
+				room, phase = c.room.code, c.room.phase
+			}
+			available = append(available, map[string]any{"id": c.id, "name": c.name, "room": room, "phase": phase})
 		}
 	}
 	data, _ := json.Marshal(map[string]any{"type": "presence", "players": available})
@@ -214,7 +219,7 @@ func (r *gameRoom) snapshot(now time.Time) map[string]any {
 	}
 	return map[string]any{"type": "room", "code": r.code, "host": r.host, "phase": r.phase,
 		"round": r.round, "serverTime": now.UnixMilli(), "startsAt": r.startsAt.UnixMilli(),
-		"endsAt": r.endsAt.UnixMilli(), "target": raceTarget, "winner": r.winner, "players": players}
+		"endsAt": r.endsAt.UnixMilli(), "target": r.target, "winner": r.winner, "players": players}
 }
 
 func (h *gameHub) broadcastRoom(r *gameRoom, now time.Time) {
@@ -262,6 +267,24 @@ func (h *gameHub) handle(c *gameClient, input gameInput, now time.Time) {
 		h.respond(c, input.Room, true, now)
 	case "decline":
 		h.respond(c, input.Room, false, now)
+	case "join":
+		r := h.rooms[input.Room]
+		if c.room == nil && r != nil && r.phase == "lobby" {
+			delete(h.invites, c.id)
+			h.addPlayer(r, c)
+			h.broadcastRoom(r, now)
+			h.presence()
+		} else {
+			h.notice(c, "room_closed")
+		}
+	case "configure":
+		if r := c.room; r != nil && r.host == c.id && r.phase == "lobby" {
+			switch input.DistanceGoal {
+			case 0, 1000, 2000, 5000:
+				r.target = float64(input.DistanceGoal)
+				h.broadcastRoom(r, now)
+			}
+		}
 	case "start":
 		h.start(c, now)
 	case "rematch":
@@ -294,7 +317,7 @@ func (h *gameHub) invite(host *gameClient, targetID int, now time.Time) {
 			h.notice(host, "server_error")
 			return
 		}
-		r = &gameRoom{code: id, host: host.id, phase: "lobby", players: make(map[int]*gamePlayer)}
+		r = &gameRoom{target: raceTarget, code: id, host: host.id, phase: "lobby", players: make(map[int]*gamePlayer)}
 		h.rooms[id] = r
 		h.addPlayer(r, host)
 		h.broadcastRoom(r, now)
@@ -343,13 +366,17 @@ func (h *gameHub) start(c *gameClient, now time.Time) {
 	r.round++
 	r.phase = "countdown"
 	r.startsAt = now.Add(raceCountdown)
-	r.endsAt = r.startsAt.Add(raceLength)
+	r.endsAt = time.Time{}
+	if r.target > 0 {
+		r.endsAt = r.startsAt.Add(time.Duration(r.target/1000) * 3 * time.Minute)
+	}
 	r.winner = nil
 	for _, p := range r.players {
 		p.Drive = nil
 		p.lastDrive = time.Time{}
 	}
 	h.broadcastRoom(r, now)
+	h.presence()
 }
 
 func (h *gameHub) rematch(c *gameClient, now time.Time) {
@@ -358,6 +385,7 @@ func (h *gameHub) rematch(c *gameClient, now time.Time) {
 		return
 	}
 	r.phase = "lobby"
+	h.presence()
 	r.winner = nil
 	for _, p := range r.players {
 		p.Drive = nil
@@ -368,7 +396,7 @@ func (h *gameHub) rematch(c *gameClient, now time.Time) {
 func validPose(p gamePose) bool {
 	return !math.IsNaN(p.X) && !math.IsNaN(p.Y) && !math.IsNaN(p.Angle) &&
 		!math.IsInf(p.X, 0) && !math.IsInf(p.Y, 0) && !math.IsInf(p.Angle, 0) &&
-		math.Abs(p.X) <= raceTarget+50 && math.Abs(p.Y) <= 300 && math.Abs(p.Angle) <= 10000
+		math.Abs(p.X) <= 1e9 && math.Abs(p.Y) <= 300 && math.Abs(p.Angle) <= 10000
 }
 
 func (h *gameHub) drive(c *gameClient, input gameInput, now time.Time) {
@@ -386,7 +414,10 @@ func (h *gameHub) drive(c *gameClient, input gameInput, now time.Time) {
 	if !input.Crashed && now.Sub(p.lastDrive) < 40*time.Millisecond {
 		return
 	}
-	distance := math.Min(raceTarget, input.Distance)
+	distance := math.Min(1e9, input.Distance)
+	if r.target > 0 {
+		distance = math.Min(r.target, distance)
+	}
 	if p.Drive != nil {
 		distance = math.Max(distance, p.Drive.Distance)
 	}
@@ -399,7 +430,7 @@ func (h *gameHub) drive(c *gameClient, input gameInput, now time.Time) {
 			h.sendBytes(member, message)
 		}
 	}
-	if distance >= raceTarget {
+	if r.target > 0 && distance >= r.target {
 		winner := c.id
 		h.finish(r, now, &winner)
 		return
@@ -442,6 +473,7 @@ func (h *gameHub) finish(r *gameRoom, now time.Time, winner *int) {
 		}
 	}
 	r.phase = "results"
+	h.presence()
 	r.winner = winner
 	h.broadcastRoom(r, now)
 }
@@ -513,9 +545,10 @@ func (h *gameHub) tick(now time.Time) {
 	for _, r := range h.rooms {
 		if r.phase == "countdown" && !now.Before(r.startsAt) {
 			r.phase = "racing"
+			h.presence()
 			h.broadcastRoom(r, now)
 		}
-		if r.phase == "racing" && !now.Before(r.endsAt) {
+		if r.phase == "racing" && !r.endsAt.IsZero() && !now.Before(r.endsAt) {
 			h.finish(r, now, nil)
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -87,5 +88,59 @@ func TestGameSocketAllowsSixPlayersAndBroadcastsRace(t *testing.T) {
 	result := gameRead(t, clients[0], "room")
 	if result["phase"] != "results" || int(result["winner"].(float64)) != ids[5] {
 		t.Fatalf("unexpected result: %+v", result)
+	}
+}
+
+func TestRaceModesAndPublicLobby(t *testing.T) {
+	for _, goal := range []int{1000, 2000, 5000, 0} {
+		t.Run(fmt.Sprint(goal), func(t *testing.T) {
+			h := &gameHub{clients: map[int]*gameClient{}, rooms: map[string]*gameRoom{}, invites: map[int]gameInvite{}}
+			now := time.Now()
+			for id := 1; id <= 8; id++ {
+				h.clients[id] = &gameClient{id: id, name: fmt.Sprint(id), out: make(chan []byte, 128)}
+			}
+			host := h.clients[1]
+			h.invite(host, 2, now)
+			for id := 2; id <= 8; id++ {
+				h.handle(h.clients[id], gameInput{Type: "join", Room: host.room.code}, now)
+			}
+			if len(host.room.players) != 8 {
+				t.Fatal("all eight players must join one lobby")
+			}
+			h.handle(host, gameInput{Type: "configure", DistanceGoal: goal}, now)
+			h.handle(h.clients[2], gameInput{Type: "configure", DistanceGoal: 123}, now)
+			if host.room.target != float64(goal) {
+				t.Fatal("only host can choose a supported mode")
+			}
+			h.start(host, now)
+			if (goal == 0) != host.room.endsAt.IsZero() {
+				t.Fatal("endless must have no deadline")
+			}
+			h.tick(now.Add(4 * time.Second))
+			pose := gamePose{X: 1500}
+			h.drive(host, gameInput{Round: 1, Car: &pose, Wheels: []gamePose{pose, pose}, Distance: 1500}, now.Add(5*time.Second))
+			if goal == 1000 && host.room.phase != "results" {
+				t.Fatal("1000m should finish")
+			}
+			if goal != 1000 && host.room.phase != "racing" {
+				t.Fatal("longer modes must continue beyond 1000m")
+			}
+			if goal == 0 {
+				h.tick(now.Add(24 * time.Hour))
+				if host.room.phase != "racing" {
+					t.Fatal("endless timed out")
+				}
+			}
+			h.presence()
+			var last map[string]any
+			for len(h.clients[8].out) > 0 {
+				if err := json.Unmarshal(<-h.clients[8].out, &last); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if last["type"] != "presence" || len(last["players"].([]any)) != 8 {
+				t.Fatal("presence must include racing players")
+			}
+		})
 	}
 }
